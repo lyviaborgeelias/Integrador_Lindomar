@@ -4,7 +4,8 @@ class IsAdminOrReadOnlyByTipo(BasePermission):
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
             return True
-        return(
+
+        return (
             request.user.is_authenticated and
             hasattr(request.user, "tipo") and
             request.user.tipo == "ADMIN"
