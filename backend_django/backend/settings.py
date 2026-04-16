@@ -108,7 +108,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'api_smart',
         'USER': 'root',
-        'PASSWORD': 'root',
+        'PASSWORD': 'senai',
         'HOST': 'localhost',
         'PORT': '3306',
     }

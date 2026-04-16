@@ -3,8 +3,9 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Sensores from "./pages/Sensores";
-import Ambientes from "./pages/Ambientes"; // 👈 IMPORTANTE
+import Ambientes from "./pages/Ambientes";
 import PrivateRoute from "./components/PrivateRoute";
+import Historico from "./pages/Historico"
 
 export default function App() {
   return (
@@ -30,12 +31,20 @@ export default function App() {
           }
         />
 
-        {/* 👇 NOVA ROTA */}
         <Route
           path="/ambientes"
           element={
             <PrivateRoute>
               <Ambientes />
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/historico"
+          element={
+            <PrivateRoute>
+              <Historico />
             </PrivateRoute>
           }
         />

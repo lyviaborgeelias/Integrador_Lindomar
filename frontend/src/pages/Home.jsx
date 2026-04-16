@@ -189,7 +189,7 @@ export default function Home() {
               <span>Dashboard</span>
             </button>
 
-             <button className="sensores-menu-item" onClick={() => navigate("/sensores")}>
+            <button className="sensores-menu-item" onClick={() => navigate("/sensores")}>
               <Cpu size={16} />
               <span>Sensores</span>
             </button>
@@ -199,7 +199,7 @@ export default function Home() {
               <span>Ambientes</span>
             </button>
 
-            <button className="dashboard-menu-item">
+            <button className="sensores-menu-item" onClick={() => navigate("/historico")}>
               <History size={16} />
               <span>Histórico</span>
             </button>
@@ -281,9 +281,8 @@ export default function Home() {
                         <td>{sensor.macTexto}</td>
                         <td>
                           <span
-                            className={`sensor-status-badge ${
-                              sensor.status === "Ativo" ? "active" : "inactive"
-                            }`}
+                            className={`sensor-status-badge ${sensor.status === "Ativo" ? "active" : "inactive"
+                              }`}
                           >
                             <span className="status-inline-dot" />
                             {sensor.status}

@@ -61,6 +61,7 @@ const initialForm = {
 export default function Sensores() {
   const navigate = useNavigate();
 
+  const [usuario, setUsuario] = useState(null);
   const [sensores, setSensores] = useState([]);
   const [microcontroladores, setMicrocontroladores] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -72,24 +73,35 @@ export default function Sensores() {
   const [form, setForm] = useState(initialForm);
   const [formError, setFormError] = useState("");
 
+  const isAdmin = usuario?.tipo === "ADMIN";
+
   function logout() {
     localStorage.removeItem("access");
     localStorage.removeItem("refresh");
     navigate("/");
   }
 
+  async function carregarUsuario() {
+    const response = await api.get("/api/me/");
+    setUsuario(response.data);
+  }
+
   async function carregarDados() {
+    const [sensoresRes, microRes] = await Promise.all([
+      api.get("/api/sensores/?page_size=100"),
+      api.get("/api/microcontroladores/?page_size=100"),
+    ]);
+
+    setSensores(getResults(sensoresRes.data));
+    setMicrocontroladores(getResults(microRes.data));
+  }
+
+  async function carregarTudo() {
     try {
       setLoading(true);
       setErro("");
 
-      const [sensoresRes, microRes] = await Promise.all([
-        api.get("/api/sensores/?page_size=100"),
-        api.get("/api/microcontroladores/?page_size=100"),
-      ]);
-
-      setSensores(getResults(sensoresRes.data));
-      setMicrocontroladores(getResults(microRes.data));
+      await Promise.all([carregarUsuario(), carregarDados()]);
     } catch (error) {
       if (error.response?.status === 401) {
         logout();
@@ -102,7 +114,7 @@ export default function Sensores() {
   }
 
   useEffect(() => {
-    carregarDados();
+    carregarTudo();
   }, []);
 
   const resumo = useMemo(() => {
@@ -112,6 +124,7 @@ export default function Sensores() {
   }, [sensores]);
 
   function abrirNovoModal() {
+    if (!isAdmin) return;
     setEditingId(null);
     setForm(initialForm);
     setFormError("");
@@ -119,6 +132,7 @@ export default function Sensores() {
   }
 
   function abrirEditarModal(sensor) {
+    if (!isAdmin) return;
     setEditingId(sensor.id);
     setForm({
       sensor: sensor.sensor,
@@ -158,6 +172,8 @@ export default function Sensores() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (!isAdmin) return;
+
     setFormError("");
 
     if (!form.mic) {
@@ -181,11 +197,16 @@ export default function Sensores() {
         await api.post("/api/sensores/", payload);
       }
 
-      await carregarDados();
+      await carregarTudo();
       fecharModal();
     } catch (error) {
       if (error.response?.status === 401) {
         logout();
+        return;
+      }
+
+      if (error.response?.status === 403) {
+        setFormError("Seu usuário não tem permissão para alterar sensores.");
         return;
       }
 
@@ -203,6 +224,8 @@ export default function Sensores() {
   }
 
   async function handleDelete(sensor) {
+    if (!isAdmin) return;
+
     const confirmar = window.confirm(
       `Deseja excluir o sensor "${formatNome(sensor.sensor)}" de ID #${sensor.id}?`
     );
@@ -211,10 +234,14 @@ export default function Sensores() {
 
     try {
       await api.delete(`/api/sensores/${sensor.id}/`);
-      await carregarDados();
+      await carregarTudo();
     } catch (error) {
       if (error.response?.status === 401) {
         logout();
+        return;
+      }
+      if (error.response?.status === 403) {
+        alert("Seu usuário não tem permissão para excluir sensores.");
         return;
       }
       alert("Não foi possível excluir o sensor.");
@@ -247,12 +274,18 @@ export default function Sensores() {
               <span>Sensores</span>
             </button>
 
-            <button className="sensores-menu-item" onClick={() => navigate("/ambientes")}>
+            <button
+              className="sensores-menu-item"
+              onClick={() => navigate("/ambientes")}
+            >
               <MapPin size={16} />
               <span>Ambientes</span>
             </button>
 
-            <button className="sensores-menu-item">
+            <button
+              className="sensores-menu-item"
+              onClick={() => navigate("/historico")}
+            >
               <History size={16} />
               <span>Histórico</span>
             </button>
@@ -272,14 +305,17 @@ export default function Sensores() {
           <div>
             <h1>Sensores</h1>
             <p>
-              {resumo.total} sensores cadastrados · {resumo.ativos} ativos
+              {resumo.total} sensores cadastrados · {resumo.ativos} ativos · Perfil:{" "}
+              <strong>{usuario?.tipo || "-"}</strong>
             </p>
           </div>
 
-          <button className="novo-sensor-btn" type="button" onClick={abrirNovoModal}>
-            <Plus size={16} />
-            <span>Novo Sensor</span>
-          </button>
+          {isAdmin && (
+            <button className="novo-sensor-btn" type="button" onClick={abrirNovoModal}>
+              <Plus size={16} />
+              <span>Novo Sensor</span>
+            </button>
+          )}
         </header>
 
         {loading && <p className="sensores-message">Carregando sensores...</p>}
@@ -325,8 +361,9 @@ export default function Sensores() {
 
                       <td>
                         <span
-                          className={`sensor-status-badge ${sensor.status ? "active" : "inactive"
-                            }`}
+                          className={`sensor-status-badge ${
+                            sensor.status ? "active" : "inactive"
+                          }`}
                         >
                           <span className="status-inline-dot" />
                           {sensor.status ? "Ativo" : "Inativo"}
@@ -334,25 +371,31 @@ export default function Sensores() {
                       </td>
 
                       <td>
-                        <div className="acoes-cell">
-                          <button
-                            className="icon-action-btn edit"
-                            type="button"
-                            title="Editar"
-                            onClick={() => abrirEditarModal(sensor)}
-                          >
-                            <Pencil size={15} />
-                          </button>
+                        {isAdmin ? (
+                          <div className="acoes-cell">
+                            <button
+                              className="icon-action-btn edit"
+                              type="button"
+                              title="Editar"
+                              onClick={() => abrirEditarModal(sensor)}
+                            >
+                              <Pencil size={15} />
+                            </button>
 
-                          <button
-                            className="icon-action-btn delete"
-                            type="button"
-                            title="Excluir"
-                            onClick={() => handleDelete(sensor)}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
+                            <button
+                              className="icon-action-btn delete"
+                              type="button"
+                              title="Excluir"
+                              onClick={() => handleDelete(sensor)}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        ) : (
+                          <span style={{ color: "#94a3b8", fontSize: "0.9rem" }}>
+                            Somente leitura
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -363,7 +406,7 @@ export default function Sensores() {
         )}
       </main>
 
-      {modalOpen && (
+      {modalOpen && isAdmin && (
         <div className="modal-overlay" onClick={fecharModal}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
