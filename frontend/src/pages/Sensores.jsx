@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  CircuitBoard,
   LayoutDashboard,
   Cpu,
   MapPin,
@@ -88,8 +89,8 @@ export default function Sensores() {
 
   async function carregarDados() {
     const [sensoresRes, microRes] = await Promise.all([
-      api.get("/api/sensores/?page_size=100"),
-      api.get("/api/microcontroladores/?page_size=100"),
+      api.get("/api/sensores/?page_size=500"),
+      api.get("/api/microcontroladores/?page_size=500"),
     ]);
 
     setSensores(getResults(sensoresRes.data));
@@ -272,6 +273,11 @@ export default function Sensores() {
             <button className="sensores-menu-item active">
               <Cpu size={16} />
               <span>Sensores</span>
+            </button>
+
+            <button className="sensores-menu-item" onClick={() => navigate("/microcontroladores")}>
+              <CircuitBoard  size={16} />
+              <span>Microcontroladores</span>
             </button>
 
             <button

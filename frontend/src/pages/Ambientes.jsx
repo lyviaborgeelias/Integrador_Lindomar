@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  CircuitBoard,
   LayoutDashboard,
   Cpu,
   MapPin,
@@ -222,6 +223,10 @@ export default function Ambientes() {
             </button>
             <button onClick={() => navigate("/sensores")}>
               <Cpu size={16} /> Sensores
+            </button>
+            <button onClick={() => navigate("/microcontroladores")}>
+              <CircuitBoard  size={16} />
+              <span>Microcontroladores</span>
             </button>
             <button className="active">
               <MapPin size={16} /> Ambientes

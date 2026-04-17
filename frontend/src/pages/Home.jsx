@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  CircuitBoard,
   LayoutDashboard,
   Cpu,
   MapPin,
@@ -192,6 +193,11 @@ export default function Home() {
             <button className="sensores-menu-item" onClick={() => navigate("/sensores")}>
               <Cpu size={16} />
               <span>Sensores</span>
+            </button>
+
+            <button className="sensores-menu-item" onClick={() => navigate("/microcontroladores")}>
+              <CircuitBoard  size={16} />
+              <span>Microcontroladores</span>
             </button>
 
             <button className="sensores-menu-item" onClick={() => navigate("/ambientes")}>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  CircuitBoard,
   LayoutDashboard,
   Cpu,
   MapPin,
@@ -37,39 +38,29 @@ function formatDateTime(timestamp) {
   });
 }
 
-function withinPeriod(timestamp, periodo) {
-  if (periodo === "all") return true;
-
-  const data = new Date(timestamp);
-  const agora = new Date();
-
-  if (Number.isNaN(data.getTime())) return false;
-
-  const diffMs = agora - data;
-  const diffHours = diffMs / (1000 * 60 * 60);
-  const diffDays = diffHours / 24;
-
-  if (periodo === "6h") return diffHours <= 6;
-  if (periodo === "24h") return diffHours <= 24;
-  if (periodo === "7d") return diffDays <= 7;
-  if (periodo === "30d") return diffDays <= 30;
-
-  return true;
+function formatDateToYYYYMMDD(date) {
+  const ano = date.getFullYear();
+  const mes = String(date.getMonth() + 1).padStart(2, "0");
+  const dia = String(date.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
 }
 
 function normalizeHistorico(item) {
   return {
     id: item.id,
     timestamp: item.timestamp || item.data_hora || item.data || null,
+    sensorId: item.sensor_id || item.sensor?.id || item.sensor || null,
     sensorNome:
       item.sensor_nome ||
       item.sensor_tipo ||
       item.sensor_nome_exibicao ||
-      item.sensor ||
+      item.sensor?.sensor ||
+      item.sensor?.nome ||
       "",
     ambiente:
       item.ambiente_descricao ||
       item.ambiente_nome ||
+      item.sensor?.mic?.ambiente?.descricao ||
       item.ambiente ||
       item.local_nome ||
       "",
@@ -78,8 +69,35 @@ function normalizeHistorico(item) {
       item.unidade_med ||
       item.unidade ||
       item.sensor_unidade ||
+      item.sensor?.unidade_med ||
       "",
   };
+}
+
+async function buscarTodasPaginas(urlInicial) {
+  let url = urlInicial;
+  let todos = [];
+
+  while (url) {
+    const response = await api.get(url);
+    const data = response.data;
+
+    if (Array.isArray(data)) {
+      todos = [...todos, ...data];
+      url = null;
+    } else {
+      const resultados = Array.isArray(data.results) ? data.results : [];
+      todos = [...todos, ...resultados];
+
+      if (data.next) {
+        url = data.next.replace("http://127.0.0.1:8000", "");
+      } else {
+        url = null;
+      }
+    }
+  }
+
+  return todos;
 }
 
 export default function Historico() {
@@ -100,53 +118,87 @@ export default function Historico() {
     navigate("/");
   }
 
-  useEffect(() => {
-    async function carregarDados() {
-      try {
-        setLoading(true);
-        setErro("");
-
-        const [historicosRes, ambientesRes] = await Promise.all([
-          api.get("/api/historicos/?ordering=-timestamp&page=1"),
-          api.get("/api/ambientes/?page_size=200"),
-        ]);
-
-        const historicosRaw = getResults(historicosRes.data);
-        const historicosNormalizados = historicosRaw.map(normalizeHistorico);
-
-        setHistoricos(historicosNormalizados);
-        setAmbientes(getResults(ambientesRes.data));
-      } catch (error) {
-        if (error.response?.status === 401) {
-          logout();
-          return;
-        }
-        console.error(error);
-        setErro("Erro ao carregar o histórico.");
-      } finally {
-        setLoading(false);
-      }
+  async function carregarAmbientes() {
+    try {
+      const ambientesRaw = await buscarTodasPaginas("/api/ambientes/?page_size=300");
+      setAmbientes(ambientesRaw);
+    } catch (error) {
+      console.error("Erro ao carregar ambientes:", error);
     }
+  }
 
-    carregarDados();
+  async function carregarHistoricos() {
+    try {
+      setLoading(true);
+      setErro("");
+
+      let historicosRaw = [];
+
+      if (filtroPeriodo === "6h") {
+        historicosRaw = await buscarTodasPaginas("/api/historicos/recentes/?horas=6&page_size=500");
+      } else if (filtroPeriodo === "24h") {
+        historicosRaw = await buscarTodasPaginas("/api/historicos/recentes/?horas=24&page_size=500");
+      } else {
+        const params = new URLSearchParams();
+        params.append("ordering", "-timestamp");
+        params.append("page_size", "500");
+
+        const hoje = new Date();
+
+        if (filtroPeriodo === "7d") {
+          const inicio = new Date();
+          inicio.setDate(hoje.getDate() - 7);
+          params.append("data_inicio", formatDateToYYYYMMDD(inicio));
+          params.append("data_fim", formatDateToYYYYMMDD(hoje));
+        }
+
+        if (filtroPeriodo === "30d") {
+          const inicio = new Date();
+          inicio.setDate(hoje.getDate() - 30);
+          params.append("data_inicio", formatDateToYYYYMMDD(inicio));
+          params.append("data_fim", formatDateToYYYYMMDD(hoje));
+        }
+
+        historicosRaw = await buscarTodasPaginas(`/api/historicos/?${params.toString()}`);
+      }
+
+      const historicosNormalizados = historicosRaw.map(normalizeHistorico);
+      setHistoricos(historicosNormalizados);
+    } catch (error) {
+      if (error.response?.status === 401) {
+        logout();
+        return;
+      }
+
+      console.error(error);
+      setErro("Erro ao carregar o histórico.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    carregarAmbientes();
   }, []);
+
+  useEffect(() => {
+    carregarHistoricos();
+  }, [filtroPeriodo]);
 
   const historicosFiltrados = useMemo(() => {
     return historicos.filter((item) => {
-      const tipoSensor = String(item.sensorNome || "").toLowerCase();
-      const ambiente = String(item.ambiente || "");
+      const tipoSensor = String(item.sensorNome || "").toLowerCase().trim();
+      const ambiente = String(item.ambiente || "").trim();
 
       const passaSensor =
-        filtroSensor === "all" ? true : tipoSensor === filtroSensor;
-
-      const passaPeriodo = withinPeriod(item.timestamp, filtroPeriodo);
+        filtroSensor === "all" ? true : tipoSensor.includes(filtroSensor);
 
       const passaAmbiente =
         filtroAmbiente === "all" ? true : ambiente === filtroAmbiente;
 
-      return passaSensor && passaPeriodo && passaAmbiente;
+      return passaSensor && passaAmbiente;
     });
-  }, [historicos, filtroSensor, filtroPeriodo, filtroAmbiente]);
+  }, [historicos, filtroSensor, filtroAmbiente]);
 
   function exportarCSV() {
     if (!historicosFiltrados.length) return;
@@ -178,11 +230,11 @@ export default function Historico() {
   }
 
   return (
-    <div className="historico-layout">
-      <aside className="historico-sidebar">
+    <div className="dashboard-layout">
+      <aside className="dashboard-sidebar">
         <div>
-          <div className="historico-brand">
-            <div className="historico-brand-icon">
+          <div className="dashboard-brand">
+            <div className="dashboard-brand-icon">
               <Cpu size={18} />
             </div>
 
@@ -192,40 +244,36 @@ export default function Historico() {
             </div>
           </div>
 
-          <nav className="historico-menu">
-            <button
-              className="historico-menu-item"
-              onClick={() => navigate("/home")}
-            >
+          <nav className="dashboard-menu">
+            <button className="dashboard-menu-item" onClick={() => navigate("/home")}>
               <LayoutDashboard size={16} />
               <span>Dashboard</span>
             </button>
 
-            <button
-              className="historico-menu-item"
-              onClick={() => navigate("/sensores")}
-            >
+            <button className="dashboard-menu-item" onClick={() => navigate("/sensores")}>
               <Cpu size={16} />
               <span>Sensores</span>
             </button>
 
-            <button
-              className="historico-menu-item"
-              onClick={() => navigate("/ambientes")}
-            >
+            <button className="sensores-menu-item" onClick={() => navigate("/microcontroladores")}>
+              <CircuitBoard  size={16} />
+              <span>Microcontroladores</span>
+            </button>
+
+            <button className="dashboard-menu-item" onClick={() => navigate("/ambientes")}>
               <MapPin size={16} />
               <span>Ambientes</span>
             </button>
 
-            <button className="historico-menu-item active">
+            <button className="dashboard-menu-item active">
               <History size={16} />
               <span>Histórico</span>
             </button>
           </nav>
         </div>
 
-        <div className="historico-sidebar-footer">
-          <button className="historico-menu-item logout" onClick={logout}>
+        <div className="dashboard-sidebar-footer">
+          <button className="dashboard-menu-item logout" onClick={logout}>
             <LogOut size={16} />
             <span>Sair</span>
           </button>
@@ -245,8 +293,14 @@ export default function Historico() {
           </button>
         </header>
 
-        {loading && <p className="historico-message">Carregando histórico...</p>}
-        {erro && <p className="historico-message error">{erro}</p>}
+        {loading && (
+          <div className="loading-container">
+            <div className="spinner"></div>
+            <p>Carregando histórico...</p>
+          </div>
+        )}
+
+        {erro && !loading && <p className="historico-message error">{erro}</p>}
 
         {!loading && !erro && (
           <>

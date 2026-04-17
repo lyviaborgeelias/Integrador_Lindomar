@@ -5,7 +5,8 @@ import Home from "./pages/Home";
 import Sensores from "./pages/Sensores";
 import Ambientes from "./pages/Ambientes";
 import PrivateRoute from "./components/PrivateRoute";
-import Historico from "./pages/Historico"
+import Historico from "./pages/Historico";
+import Microcontroladores from "./pages/Microcontroladores";
 
 export default function App() {
   return (
@@ -47,6 +48,15 @@ export default function App() {
               <Historico />
             </PrivateRoute>
           }
+        />
+
+        <Route 
+          path="/microcontroladores" 
+          element={
+          <PrivateRoute>
+          <Microcontroladores />
+          </PrivateRoute>
+        }
         />
       </Routes>
     </BrowserRouter>

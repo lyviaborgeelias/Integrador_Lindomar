@@ -70,7 +70,12 @@ class SensorViewSet(viewsets.ModelViewSet):
 
 
 class HistoricoViewSet(viewsets.ModelViewSet):
-    queryset = Historico.objects.select_related("sensor", "sensor__mic", "sensor__mic__ambiente").all().order_by("-timestamp")
+    queryset = (
+        Historico.objects
+        .select_related("sensor", "sensor__mic", "sensor__mic__ambiente")
+        .all()
+        .order_by("-timestamp")
+    )
     serializer_class = HistoricoSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReadOnlyByTipo]
     filterset_fields = ["sensor"]
