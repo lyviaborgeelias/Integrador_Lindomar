@@ -132,35 +132,41 @@ export default function Historico() {
       setLoading(true);
       setErro("");
 
-      let historicosRaw = [];
+      const params = new URLSearchParams();
+      params.append("ordering", "-timestamp");
+      params.append("page_size", "500");
+
+      const agora = new Date();
 
       if (filtroPeriodo === "6h") {
-        historicosRaw = await buscarTodasPaginas("/api/historicos/recentes/?horas=6&page_size=500");
-      } else if (filtroPeriodo === "24h") {
-        historicosRaw = await buscarTodasPaginas("/api/historicos/recentes/?horas=24&page_size=500");
-      } else {
-        const params = new URLSearchParams();
-        params.append("ordering", "-timestamp");
-        params.append("page_size", "500");
-
-        const hoje = new Date();
-
-        if (filtroPeriodo === "7d") {
-          const inicio = new Date();
-          inicio.setDate(hoje.getDate() - 7);
-          params.append("data_inicio", formatDateToYYYYMMDD(inicio));
-          params.append("data_fim", formatDateToYYYYMMDD(hoje));
-        }
-
-        if (filtroPeriodo === "30d") {
-          const inicio = new Date();
-          inicio.setDate(hoje.getDate() - 30);
-          params.append("data_inicio", formatDateToYYYYMMDD(inicio));
-          params.append("data_fim", formatDateToYYYYMMDD(hoje));
-        }
-
-        historicosRaw = await buscarTodasPaginas(`/api/historicos/?${params.toString()}`);
+        const inicio = new Date(agora.getTime() - 6 * 60 * 60 * 1000);
+        params.append("data_inicio", formatDateToYYYYMMDD(inicio));
+        params.append("data_fim", formatDateToYYYYMMDD(agora));
       }
+
+      if (filtroPeriodo === "24h") {
+        const inicio = new Date(agora.getTime() - 24 * 60 * 60 * 1000);
+        params.append("data_inicio", formatDateToYYYYMMDD(inicio));
+        params.append("data_fim", formatDateToYYYYMMDD(agora));
+      }
+
+      if (filtroPeriodo === "7d") {
+        const inicio = new Date();
+        inicio.setDate(agora.getDate() - 7);
+        params.append("data_inicio", formatDateToYYYYMMDD(inicio));
+        params.append("data_fim", formatDateToYYYYMMDD(agora));
+      }
+
+      if (filtroPeriodo === "30d") {
+        const inicio = new Date();
+        inicio.setDate(agora.getDate() - 30);
+        params.append("data_inicio", formatDateToYYYYMMDD(inicio));
+        params.append("data_fim", formatDateToYYYYMMDD(agora));
+      }
+
+      const historicosRaw = await buscarTodasPaginas(
+        `/api/historicos/?${params.toString()}`
+      );
 
       const historicosNormalizados = historicosRaw.map(normalizeHistorico);
       setHistoricos(historicosNormalizados);
@@ -170,7 +176,9 @@ export default function Historico() {
         return;
       }
 
-      console.error(error);
+      console.error("ERRO HISTÓRICO:", error);
+      console.error("STATUS:", error.response?.status);
+      console.error("DADOS:", error.response?.data);
       setErro("Erro ao carregar o histórico.");
     } finally {
       setLoading(false);
@@ -256,7 +264,7 @@ export default function Historico() {
             </button>
 
             <button className="sensores-menu-item" onClick={() => navigate("/microcontroladores")}>
-              <CircuitBoard  size={16} />
+              <CircuitBoard size={16} />
               <span>Microcontroladores</span>
             </button>
 

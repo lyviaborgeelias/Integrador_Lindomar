@@ -204,35 +204,41 @@ export default function Ambientes() {
   }
 
   return (
-    <div className="layout">
-      <aside className="sidebar">
+    <div className="dashboard-layout">
+      <aside className="dashboard-sidebar">
         <div>
-          <div className="brand">
-            <div class="dashboard-brand-icon">
+          <div className="dashboard-brand">
+            <div className="dashboard-brand-icon">
               <Cpu size={18} />
             </div>
+
             <div>
               <h2>TecnoVille</h2>
               <p>Smart City Monitor</p>
             </div>
           </div>
 
-          <nav>
-            <button onClick={() => navigate("/home")}>
-              <LayoutDashboard size={16} /> Dashboard
+          <nav className="dashboard-menu">
+            <button className="dashboard-menu-item" onClick={() => navigate("/home")}>
+              <LayoutDashboard size={16} /> 
+              <span>Dashboard</span>
             </button>
-            <button onClick={() => navigate("/sensores")}>
-              <Cpu size={16} /> Sensores
+
+            <button className="dashboard-menu-item" onClick={() => navigate("/sensores")}>
+              <Cpu size={16} /> 
+              <span>Sensores</span>
             </button>
-            <button onClick={() => navigate("/microcontroladores")}>
+            <button className="dashboard-menu-item" onClick={() => navigate("/microcontroladores")}>
               <CircuitBoard  size={16} />
               <span>Microcontroladores</span>
             </button>
-            <button className="active">
-              <MapPin size={16} /> Ambientes
+            <button className="dashboard-menu-item active">
+              <MapPin size={16} /> 
+              <span>Ambientes</span>
             </button>
-            <button onClick={() => navigate("/historico")}>
-              <History size={16} /> Histórico
+            <button className="dashboard-menu-item" onClick={() => navigate("/historico")}>
+              <History size={16} /> 
+              <span>Histórico</span>
             </button>
           </nav>
         </div>

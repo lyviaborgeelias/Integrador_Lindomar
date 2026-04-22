@@ -8,7 +8,6 @@ from .views import (
     MicrocontroladorViewSet,
     SensorViewSet,
     HistoricoViewSet,
-    HistoricosRecentesView,
 )
 
 router = DefaultRouter()
@@ -22,5 +21,4 @@ router.register(r"historicos", HistoricoViewSet)
 urlpatterns = [
     path("", include(router.urls)),
     path("me/", MeView.as_view(), name="me"),
-    path("historicos-recentes/", HistoricosRecentesView.as_view(), name="historicos-recentes"),
 ]

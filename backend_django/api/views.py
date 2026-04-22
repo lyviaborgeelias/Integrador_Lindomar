@@ -69,13 +69,11 @@ class SensorViewSet(viewsets.ModelViewSet):
     ordering_fields = ["id", "sensor"]
 
 
+
 class HistoricoViewSet(viewsets.ModelViewSet):
-    queryset = (
-        Historico.objects
-        .select_related("sensor", "sensor__mic", "sensor__mic__ambiente")
-        .all()
-        .order_by("-timestamp")
-    )
+    queryset = Historico.objects.select_related(
+        "sensor", "sensor__mic", "sensor__mic__ambiente"
+    ).all().order_by("-timestamp")
     serializer_class = HistoricoSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReadOnlyByTipo]
     filterset_fields = ["sensor"]
@@ -89,38 +87,26 @@ class HistoricoViewSet(viewsets.ModelViewSet):
         data_fim = self.request.query_params.get("data_fim")
         sensor = self.request.query_params.get("sensor")
         status_sensor = self.request.query_params.get("status_sensor")
+        horas = self.request.query_params.get("horas")
 
         if sensor:
             queryset = queryset.filter(sensor_id=sensor)
 
-        if data_inicio:
-            queryset = queryset.filter(timestamp__date__gte=data_inicio)
+        if horas:
+            try:
+                horas = int(horas)
+                limite = timezone.now() - timedelta(hours=horas)
+                queryset = queryset.filter(timestamp__gte=limite)
+            except ValueError:
+                pass
+        else:
+            if data_inicio:
+                queryset = queryset.filter(timestamp__date__gte=data_inicio)
 
-        if data_fim:
-            queryset = queryset.filter(timestamp__date__lte=data_fim)
+            if data_fim:
+                queryset = queryset.filter(timestamp__date__lte=data_fim)
 
         if status_sensor in ["true", "false"]:
             queryset = queryset.filter(sensor__status=(status_sensor == "true"))
 
         return queryset
-
-
-class HistoricosRecentesView(generics.ListAPIView):
-    serializer_class = HistoricoSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        horas = self.request.query_params.get("horas", 24)
-        try:
-            horas = int(horas)
-        except ValueError:
-            horas = 24
-
-        limite = timezone.now() - timedelta(hours=horas)
-
-        return (
-            Historico.objects
-            .select_related("sensor", "sensor__mic", "sensor__mic__ambiente")
-            .filter(timestamp__gte=limite)
-            .order_by("-timestamp")
-        )

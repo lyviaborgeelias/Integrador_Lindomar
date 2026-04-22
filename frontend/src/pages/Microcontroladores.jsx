@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  CircuitBoard,
   LayoutDashboard,
   Cpu,
   MapPin,
@@ -8,17 +9,11 @@ import {
   Plus,
   Pencil,
   Trash2,
-  Search,
-  RefreshCcw,
   X,
-  Save,
-  CircuitBoard,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import "./styles/Microcontroladores.css";
-
-const ENDPOINT = "/api/mics/";
 
 function getResults(data) {
   if (Array.isArray(data)) return data;
@@ -26,115 +21,31 @@ function getResults(data) {
   return [];
 }
 
-async function buscarTodasPaginas(urlInicial) {
-  let url = urlInicial;
-  let todos = [];
-
-  while (url) {
-    const response = await api.get(url);
-    const data = response.data;
-
-    if (Array.isArray(data)) {
-      todos = [...todos, ...data];
-      url = null;
-    } else {
-      const resultados = Array.isArray(data.results) ? data.results : [];
-      todos = [...todos, ...resultados];
-      url = data.next
-        ? data.next.replace("http://127.0.0.1:8000", "")
-        : null;
-    }
-  }
-
-  return todos;
-}
-
-function normalizeMic(item) {
-  return {
-    id: item.id,
-    nome:
-      item.nome ||
-      item.descricao ||
-      item.identificacao ||
-      item.mic ||
-      `Microcontrolador ${item.id}`,
-    mac: item.mac || item.mac_address || "",
-    ip: item.ip || item.ip_address || "",
-    ambienteId:
-      item.ambiente_id ||
-      item.ambiente?.id ||
-      item.ambiente ||
-      "",
-    ambienteNome:
-      item.ambiente_nome ||
-      item.ambiente?.descricao ||
-      item.local_nome ||
-      "",
-    status:
-      typeof item.status === "boolean"
-        ? item.status
-        : item.ativo === true
-        ? true
-        : false,
-  };
-}
-
-function getUserType() {
-  return (
-    localStorage.getItem("tipo_usuario") ||
-    localStorage.getItem("user_tipo") ||
-    localStorage.getItem("tipo") ||
-    localStorage.getItem("role") ||
-    ""
-  ).toLowerCase();
-}
-
-function isAdminUser() {
-  const tipo = getUserType();
-  const adminFlag = localStorage.getItem("is_admin");
-
-  return (
-    tipo === "admin" ||
-    tipo === "administrador" ||
-    tipo === "adm" ||
-    adminFlag === "true"
-  );
-}
-
-function buildPayload(form) {
-  return {
-    nome: form.nome,
-    mac: form.mac,
-    ip: form.ip,
-    ambiente: form.ambienteId || null,
-    status: form.status,
-  };
-}
-
 const initialForm = {
-  nome: "",
-  mac: "",
-  ip: "",
-  ambienteId: "",
+  modelo: "",
+  mac_address: "",
+  latitude: "",
+  longitude: "",
+  ambiente: "",
   status: true,
 };
 
 export default function Microcontroladores() {
   const navigate = useNavigate();
 
+  const [usuario, setUsuario] = useState(null);
   const [microcontroladores, setMicrocontroladores] = useState([]);
   const [ambientes, setAmbientes] = useState([]);
-  const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(true);
-  const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
 
-  const [modalAberto, setModalAberto] = useState(false);
-  const [modoEdicao, setModoEdicao] = useState(false);
-  const [registroAtual, setRegistroAtual] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(initialForm);
+  const [formError, setFormError] = useState("");
 
-  const isAdmin = isAdminUser();
+  const isAdmin = usuario?.tipo === "ADMIN";
 
   function logout() {
     localStorage.removeItem("access");
@@ -142,136 +53,189 @@ export default function Microcontroladores() {
     navigate("/");
   }
 
+  async function carregarUsuario() {
+    const response = await api.get("/api/me/");
+    setUsuario(response.data);
+  }
+
   async function carregarDados() {
+    const [microRes, ambientesRes] = await Promise.all([
+      api.get("/api/microcontroladores/?page_size=500"),
+      api.get("/api/ambientes/?page_size=500"),
+    ]);
+
+    setMicrocontroladores(getResults(microRes.data));
+    setAmbientes(getResults(ambientesRes.data));
+  }
+
+  async function carregarTudo() {
     try {
       setLoading(true);
       setErro("");
 
-      const [mics, ambientesLista] = await Promise.all([
-        buscarTodasPaginas(`${ENDPOINT}?page_size=300`),
-        buscarTodasPaginas("/api/ambientes/?page_size=300"),
-      ]);
-
-      setMicrocontroladores(mics.map(normalizeMic));
-      setAmbientes(ambientesLista);
+      await Promise.all([carregarUsuario(), carregarDados()]);
     } catch (error) {
       if (error.response?.status === 401) {
         logout();
         return;
       }
-
-      console.error(error);
-      setErro("Erro ao carregar os microcontroladores.");
+      setErro("Erro ao carregar microcontroladores.");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    carregarDados();
+    carregarTudo();
   }, []);
 
-  function abrirNovo() {
-    setModoEdicao(false);
-    setRegistroAtual(null);
+  const resumo = useMemo(() => {
+    const total = microcontroladores.length;
+    const ativos = microcontroladores.filter((mic) => mic.status).length;
+    return { total, ativos };
+  }, [microcontroladores]);
+
+  function abrirNovoModal() {
+    if (!isAdmin) return;
+    setEditingId(null);
     setForm(initialForm);
-    setModalAberto(true);
+    setFormError("");
+    setModalOpen(true);
   }
 
-  function abrirEdicao(item) {
-    setModoEdicao(true);
-    setRegistroAtual(item);
+  function abrirEditarModal(micro) {
+    if (!isAdmin) return;
+    setEditingId(micro.id);
     setForm({
-      nome: item.nome || "",
-      mac: item.mac || "",
-      ip: item.ip || "",
-      ambienteId: item.ambienteId || "",
-      status: !!item.status,
+      modelo: micro.modelo || "",
+      mac_address: micro.mac_address || "",
+      latitude: micro.latitude ?? "",
+      longitude: micro.longitude ?? "",
+      ambiente: micro.ambiente || "",
+      status: micro.status,
     });
-    setModalAberto(true);
+    setFormError("");
+    setModalOpen(true);
   }
 
   function fecharModal() {
-    if (salvando) return;
-    setModalAberto(false);
-    setModoEdicao(false);
-    setRegistroAtual(null);
+    if (saving) return;
+    setModalOpen(false);
+    setEditingId(null);
     setForm(initialForm);
+    setFormError("");
   }
 
-  function atualizarCampo(campo, valor) {
+  function handleChange(e) {
+    const { name, value, type, checked } = e.target;
+
     setForm((prev) => ({
       ...prev,
-      [campo]: valor,
+      [name]: type === "checkbox" ? checked : value,
     }));
   }
 
-  async function salvarMicrocontrolador(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
+    if (!isAdmin) return;
+
+    setFormError("");
+
+    if (!form.ambiente) {
+      setFormError("Selecione um ambiente.");
+      return;
+    }
+
+    const payload = {
+      modelo: String(form.modelo || "").trim(),
+      mac_address: String(form.mac_address || "").trim(),
+      latitude: form.latitude === "" ? null : Number(form.latitude),
+      longitude: form.longitude === "" ? null : Number(form.longitude),
+      ambiente: Number(form.ambiente),
+      status: Boolean(form.status),
+    };
+
+    console.log("PAYLOAD ENVIADO:", payload);
 
     try {
-      setSalvando(true);
+      setSaving(true);
 
-      const payload = buildPayload(form);
-
-      if (modoEdicao && registroAtual?.id) {
-        await api.put(`${ENDPOINT}${registroAtual.id}/`, payload);
+      if (editingId) {
+        await api.patch(`/api/microcontroladores/${editingId}/`, payload);
       } else {
-        await api.post(ENDPOINT, payload);
+        await api.post("/api/microcontroladores/", payload);
       }
 
-      await carregarDados();
+      await carregarTudo();
       fecharModal();
     } catch (error) {
-      console.error(error);
-      alert("Erro ao salvar o microcontrolador. Verifique os campos e a API.");
+      console.error("ERRO COMPLETO:", error);
+      console.error("STATUS:", error.response?.status);
+      console.error("DATA:", error.response?.data);
+
+      if (error.response?.status === 401) {
+        logout();
+        return;
+      }
+
+      if (error.response?.status === 403) {
+        setFormError("Seu usuário não tem permissão para alterar microcontroladores.");
+        return;
+      }
+
+      const data = error.response?.data;
+
+      if (typeof data === "string") {
+        setFormError(data);
+      } else if (data?.detail) {
+        setFormError(data.detail);
+      } else if (data && typeof data === "object") {
+        const mensagens = Object.entries(data)
+          .map(([campo, valor]) => {
+            const texto = Array.isArray(valor) ? valor.join(", ") : String(valor);
+            return `${campo}: ${texto}`;
+          })
+          .join(" | ");
+        setFormError(mensagens || "Não foi possível salvar o microcontrolador.");
+      } else {
+        setFormError("Não foi possível salvar o microcontrolador.");
+      }
     } finally {
-      setSalvando(false);
+      setSaving(false);
     }
   }
 
-  async function excluirMicrocontrolador(item) {
+  async function handleDelete(micro) {
+    if (!isAdmin) return;
+
     const confirmar = window.confirm(
-      `Deseja excluir o microcontrolador "${item.nome}"?`
+      `Deseja excluir o microcontrolador "${micro.modelo}" de ID #${micro.id}?`
     );
 
     if (!confirmar) return;
 
     try {
-      await api.delete(`${ENDPOINT}${item.id}/`);
-      await carregarDados();
+      await api.delete(`/api/microcontroladores/${micro.id}/`);
+      await carregarTudo();
     } catch (error) {
-      console.error(error);
-      alert("Erro ao excluir o microcontrolador.");
+      if (error.response?.status === 401) {
+        logout();
+        return;
+      }
+      if (error.response?.status === 403) {
+        alert("Seu usuário não tem permissão para excluir microcontroladores.");
+        return;
+      }
+      alert("Não foi possível excluir o microcontrolador.");
     }
   }
 
-  const microcontroladoresFiltrados = useMemo(() => {
-    const termo = busca.toLowerCase().trim();
-
-    if (!termo) return microcontroladores;
-
-    return microcontroladores.filter((item) => {
-      const nome = String(item.nome || "").toLowerCase();
-      const mac = String(item.mac || "").toLowerCase();
-      const ip = String(item.ip || "").toLowerCase();
-      const ambiente = String(item.ambienteNome || "").toLowerCase();
-
-      return (
-        nome.includes(termo) ||
-        mac.includes(termo) ||
-        ip.includes(termo) ||
-        ambiente.includes(termo)
-      );
-    });
-  }, [microcontroladores, busca]);
-
   return (
     <div className="micro-layout">
-      <aside className="sidebar">
+      <aside className="micro-sidebar">
         <div>
-          <div className="brand">
-            <div className="brand-icon">
+          <div className="micro-brand">
+            <div className="micro-brand-icon">
               <Cpu size={18} />
             </div>
 
@@ -281,39 +245,42 @@ export default function Microcontroladores() {
             </div>
           </div>
 
-          <nav className="menu">
-            <button className="menu-item" onClick={() => navigate("/home")}>
+          <nav className="micro-menu">
+            <button className="micro-menu-item" onClick={() => navigate("/home")}>
               <LayoutDashboard size={16} />
               <span>Dashboard</span>
             </button>
 
-            <button className="menu-item" onClick={() => navigate("/sensores")}>
+            <button className="micro-menu-item" onClick={() => navigate("/sensores")}>
               <Cpu size={16} />
               <span>Sensores</span>
             </button>
 
-            <button
-              className="menu-item active"
-              onClick={() => navigate("/microcontroladores")}
-            >
+            <button className="micro-menu-item active">
               <CircuitBoard size={16} />
               <span>Microcontroladores</span>
             </button>
 
-            <button className="menu-item" onClick={() => navigate("/ambientes")}>
+            <button
+              className="micro-menu-item"
+              onClick={() => navigate("/ambientes")}
+            >
               <MapPin size={16} />
               <span>Ambientes</span>
             </button>
 
-            <button className="menu-item" onClick={() => navigate("/historico")}>
+            <button
+              className="micro-menu-item"
+              onClick={() => navigate("/historico")}
+            >
               <History size={16} />
               <span>Histórico</span>
             </button>
           </nav>
         </div>
 
-        <div className="sidebar-footer">
-          <button className="menu-item logout" onClick={logout}>
+        <div className="micro-sidebar-footer">
+          <button className="micro-menu-item logout" onClick={logout}>
             <LogOut size={16} />
             <span>Sair</span>
           </button>
@@ -324,38 +291,27 @@ export default function Microcontroladores() {
         <header className="micro-header">
           <div>
             <h1>Microcontroladores</h1>
-            <p>Gerencie os microcontroladores cadastrados no sistema</p>
+            <p>
+              {resumo.total} microcontroladores cadastrados · {resumo.ativos} ativos · Perfil:{" "}
+              <strong>{usuario?.tipo || "-"}</strong>
+            </p>
           </div>
 
-          <div className="micro-header-actions">
-            <button className="reload-btn" onClick={carregarDados}>
-              <RefreshCcw size={16} />
-              <span>Atualizar</span>
+          {isAdmin && (
+            <button className="novo-micro-btn" type="button" onClick={abrirNovoModal}>
+              <Plus size={16} />
+              <span>Novo Microcontrolador</span>
             </button>
-
-            {isAdmin && (
-              <button className="new-btn" onClick={abrirNovo}>
-                <Plus size={16} />
-                <span>Novo microcontrolador</span>
-              </button>
-            )}
-          </div>
+          )}
         </header>
 
-        {loading && (
-          <div className="loading-container">
-            <div className="spinner"></div>
-            <p>Carregando microcontroladores...</p>
-          </div>
-        )}
-
-        {erro && !loading && <p className="micro-message error">{erro}</p>}
+        {loading && <p className="micro-message">Carregando microcontroladores...</p>}
+        {erro && <p className="micro-message error">{erro}</p>}
 
         {!loading && !erro && (
-          <section className="micro-table-card">
-            <div className="micro-table-header">
-              <h3>Lista de Microcontroladores</h3>
-              <span>{microcontroladoresFiltrados.length} registro(s)</span>
+          <section className="micro-panel">
+            <div className="micro-panel-header">
+              <h3>Microcontroladores Cadastrados</h3>
             </div>
 
             <div className="micro-table-wrapper">
@@ -363,67 +319,63 @@ export default function Microcontroladores() {
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>NOME</th>
-                    <th>MAC</th>
-                    <th>IP</th>
+                    <th>MODELO</th>
+                    <th>MAC ADDRESS</th>
+                    <th>LATITUDE</th>
+                    <th>LONGITUDE</th>
                     <th>AMBIENTE</th>
                     <th>STATUS</th>
-                    {isAdmin && <th>AÇÕES</th>}
+                    <th>AÇÕES</th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {microcontroladoresFiltrados.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={isAdmin ? "7" : "6"}
-                        className="empty-cell"
-                      >
-                        Nenhum microcontrolador encontrado.
+                  {microcontroladores.map((micro) => (
+                    <tr key={micro.id}>
+                      <td>#{micro.id}</td>
+                      <td className="name-cell">{micro.modelo || "-"}</td>
+                      <td>{micro.mac_address || "-"}</td>
+                      <td>{micro.latitude ?? "-"}</td>
+                      <td>{micro.longitude ?? "-"}</td>
+                      <td>{micro.ambiente_descricao || micro.ambiente || "-"}</td>
+
+                      <td>
+                        <span
+                          className={`micro-status-badge ${micro.status ? "active" : "inactive"
+                            }`}
+                        >
+                          <span className="status-inline-dot" />
+                          {micro.status ? "Ativo" : "Inativo"}
+                        </span>
+                      </td>
+
+                      <td>
+                        {isAdmin ? (
+                          <div className="acoes-cell">
+                            <button
+                              className="icon-action-btn edit"
+                              type="button"
+                              title="Editar"
+                              onClick={() => abrirEditarModal(micro)}
+                            >
+                              <Pencil size={15} />
+                            </button>
+
+                            <button
+                              className="icon-action-btn delete"
+                              type="button"
+                              title="Excluir"
+                              onClick={() => handleDelete(micro)}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="somente-leitura">Somente leitura</span>
+                        )}
                       </td>
                     </tr>
-                  ) : (
-                    microcontroladoresFiltrados.map((item) => (
-                      <tr key={item.id}>
-                        <td>{item.id}</td>
-                        <td className="name-cell">{item.nome || "-"}</td>
-                        <td>{item.mac || "-"}</td>
-                        <td>{item.ip || "-"}</td>
-                        <td>{item.ambienteNome || "-"}</td>
-                        <td>
-                          <span
-                            className={`status-badge ${
-                              item.status ? "ativo" : "inativo"
-                            }`}
-                          >
-                            {item.status ? "Ativo" : "Inativo"}
-                          </span>
-                        </td>
-
-                        {isAdmin && (
-                          <td>
-                            <div className="action-buttons">
-                              <button
-                                className="icon-btn edit"
-                                onClick={() => abrirEdicao(item)}
-                                title="Editar"
-                              >
-                                <Pencil size={16} />
-                              </button>
-
-                              <button
-                                className="icon-btn delete"
-                                onClick={() => excluirMicrocontrolador(item)}
-                                title="Excluir"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    ))
-                  )}
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -431,89 +383,112 @@ export default function Microcontroladores() {
         )}
       </main>
 
-      {modalAberto && (
+      {modalOpen && isAdmin && (
         <div className="modal-overlay" onClick={fecharModal}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>
-                {modoEdicao ? "Editar microcontrolador" : "Novo microcontrolador"}
-              </h3>
+              <div>
+                <h3>{editingId ? "Editar Microcontrolador" : "Novo Microcontrolador"}</h3>
+                <p>
+                  {editingId
+                    ? "Atualize as informações do microcontrolador"
+                    : "Preencha os dados para cadastrar um novo microcontrolador"}
+                </p>
+              </div>
 
-              <button className="close-btn" onClick={fecharModal}>
+              <button className="modal-close" type="button" onClick={fecharModal}>
                 <X size={18} />
               </button>
             </div>
 
-            <form className="modal-form" onSubmit={salvarMicrocontrolador}>
-              <div className="form-group">
-                <label>Nome</label>
-                <input
-                  type="text"
-                  value={form.nome}
-                  onChange={(e) => atualizarCampo("nome", e.target.value)}
-                  placeholder="Digite o nome"
-                  required
-                />
-              </div>
+            <form className="micro-form" onSubmit={handleSubmit}>
+              <div className="form-grid">
+                <div className="form-field">
+                  <label>Modelo</label>
+                  <select name="modelo" value={form.modelo} onChange={handleChange}>
+                    <option value="">Selecione</option>
+                    <option value="ESP32">ESP32</option>
+                    <option value="ESP8266">ESP8266</option>
+                  </select>
+                </div>
 
-              <div className="form-group">
-                <label>MAC</label>
-                <input
-                  type="text"
-                  value={form.mac}
-                  onChange={(e) => atualizarCampo("mac", e.target.value)}
-                  placeholder="Digite o MAC"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>IP</label>
-                <input
-                  type="text"
-                  value={form.ip}
-                  onChange={(e) => atualizarCampo("ip", e.target.value)}
-                  placeholder="Digite o IP"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Ambiente</label>
-                <select
-                  value={form.ambienteId}
-                  onChange={(e) => atualizarCampo("ambienteId", e.target.value)}
-                >
-                  <option value="">Selecione um ambiente</option>
-                  {ambientes.map((ambiente) => (
-                    <option key={ambiente.id} value={ambiente.id}>
-                      {ambiente.descricao}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group checkbox-group">
-                <label className="checkbox-label">
+                <div className="form-field">
+                  <label>MAC Address</label>
                   <input
-                    type="checkbox"
-                    checked={form.status}
-                    onChange={(e) => atualizarCampo("status", e.target.checked)}
+                    name="mac_address"
+                    value={form.mac_address}
+                    onChange={handleChange}
+                    placeholder="Digite o MAC Address"
                   />
-                  Microcontrolador ativo
-                </label>
+                </div>
+
+                <div className="form-field">
+                  <label>Latitude</label>
+                  <input
+                    name="latitude"
+                    type="number"
+                    step="any"
+                    value={form.latitude}
+                    onChange={handleChange}
+                    placeholder="Digite a latitude"
+                  />
+                </div>
+
+                <div className="form-field">
+                  <label>Longitude</label>
+                  <input
+                    name="longitude"
+                    type="number"
+                    step="any"
+                    value={form.longitude}
+                    onChange={handleChange}
+                    placeholder="Digite a longitude"
+                  />
+                </div>
+
+                <div className="form-field">
+                  <label>Ambiente</label>
+                  <select name="ambiente" value={form.ambiente} onChange={handleChange}>
+                    <option value="">Selecione</option>
+                    {ambientes.map((ambiente) => (
+                      <option key={ambiente.id} value={ambiente.id}>
+                        {ambiente.descricao}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-field checkbox-field">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      name="status"
+                      checked={form.status}
+                      onChange={handleChange}
+                    />
+                    Microcontrolador ativo
+                  </label>
+                </div>
               </div>
+
+              {formError && <div className="form-error">{formError}</div>}
 
               <div className="modal-actions">
                 <button
-                  type="button"
                   className="secondary-btn"
+                  type="button"
                   onClick={fecharModal}
+                  disabled={saving}
                 >
                   Cancelar
                 </button>
 
-                <button type="submit" className="primary-btn" disabled={salvando}>
-                  <Save size={16} />
-                  <span>{salvando ? "Salvando..." : "Salvar"}</span>
+                <button className="primary-btn" type="submit" disabled={saving}>
+                  {saving
+                    ? "Salvando..."
+                    : editingId
+                      ? "Salvar Alterações"
+                      : "Cadastrar Microcontrolador"}
                 </button>
               </div>
             </form>
